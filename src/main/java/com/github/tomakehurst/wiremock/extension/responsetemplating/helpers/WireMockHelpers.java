@@ -15,72 +15,79 @@
  */
 package com.github.tomakehurst.wiremock.extension.responsetemplating.helpers;
 
-import com.github.jknack.handlebars.Helper;
-import com.github.jknack.handlebars.Options;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import java.io.IOException;
-import java.util.Date;
+import com.mitchellbosecke.pebble.attributes.AttributeResolver;
+import com.mitchellbosecke.pebble.extension.Extension;
+import com.mitchellbosecke.pebble.extension.Filter;
+import com.mitchellbosecke.pebble.extension.Function;
+import com.mitchellbosecke.pebble.extension.NodeVisitorFactory;
+import com.mitchellbosecke.pebble.extension.Test;
+import com.mitchellbosecke.pebble.operator.BinaryOperator;
+import com.mitchellbosecke.pebble.operator.UnaryOperator;
+import com.mitchellbosecke.pebble.tokenParser.TokenParser;
 
 /**
  * This enum is implemented similar to the StringHelpers of handlebars.
  * It is basically a library of all available wiremock helpers
  */
-public enum WireMockHelpers implements Helper<Object> {
-    xPath {
-        private HandlebarsXPathHelper helper = new HandlebarsXPathHelper();
+public class WireMockHelpers implements Extension{
 
-        @Override
-        public Object apply(final Object context, final Options options) throws IOException {
-            return this.helper.apply(String.valueOf(context), options);
-        }
-    },
-    soapXPath {
-        private HandlebarsSoapHelper helper = new HandlebarsSoapHelper();
-
-        @Override
-        public Object apply(final Object context, final Options options) throws IOException {
-            return this.helper.apply(String.valueOf(context), options);
-        }
-    },
-    jsonPath {
-        private HandlebarsJsonPathHelper helper = new HandlebarsJsonPathHelper();
-
-        @Override
-        public Object apply(final Object context, final Options options) throws IOException {
-            return this.helper.apply(String.valueOf(context), options);
-        }
-    },
-    randomValue {
-        private HandlebarsRandomValuesHelper helper = new HandlebarsRandomValuesHelper();
-
-        @Override
-        public Object apply(final Object context, final Options options) throws IOException {
-            return this.helper.apply(null, options);
-        }
-    },
-    date {
-        private HandlebarsCurrentDateHelper helper = new HandlebarsCurrentDateHelper();
-
-        @Override
-        public Object apply(final Object context, final Options options) throws IOException {
-            Date dateContext = context instanceof Date ? (Date) context : null;
-            return this.helper.apply(dateContext, options);
-        }
-    },
-    now {
-        private HandlebarsCurrentDateHelper helper = new HandlebarsCurrentDateHelper();
-
-        @Override
-        public Object apply(final Object context, final Options options) throws IOException {
-            return this.helper.apply(null, options);
-        }
-    },
-    parseDate {
-        private ParseDateHelper helper = new ParseDateHelper();
-
-        @Override
-        public Object apply(Object context, Options options) throws IOException {
-            return helper.apply(context.toString(), options);
-        }
+    @Override
+    public Map<String, Filter> getFilters() {
+        // TODO Auto-generated method stub
+        return null;
     }
+
+    @Override
+    public Map<String, Test> getTests() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public Map<String, Function> getFunctions() {
+        Map<String, Function> functions = new HashMap<>();
+        functions.put(HandlebarsCurrentDateHelper.NAME, new HandlebarsCurrentDateHelper());
+        return functions;
+    }
+
+    @Override
+    public List<TokenParser> getTokenParsers() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public List<BinaryOperator> getBinaryOperators() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public List<UnaryOperator> getUnaryOperators() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public Map<String, Object> getGlobalVariables() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public List<NodeVisitorFactory> getNodeVisitors() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public List<AttributeResolver> getAttributeResolver() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
 }

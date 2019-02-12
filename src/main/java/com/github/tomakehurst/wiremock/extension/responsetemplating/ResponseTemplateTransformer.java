@@ -15,18 +15,22 @@
  */
 package com.github.tomakehurst.wiremock.extension.responsetemplating;
 
-import com.github.jknack.handlebars.Handlebars;
-import com.github.jknack.handlebars.Helper;
-import com.github.jknack.handlebars.Template;
-import com.github.jknack.handlebars.helper.AssignHelper;
-import com.github.jknack.handlebars.helper.ConditionalHelpers;
-import com.github.jknack.handlebars.helper.NumberHelper;
-import com.github.jknack.handlebars.helper.StringHelpers;
+import static com.github.tomakehurst.wiremock.common.Exceptions.throwUnchecked;
+import static com.google.common.base.MoreObjects.firstNonNull;
+
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.common.FileSource;
 import com.github.tomakehurst.wiremock.common.TextFile;
 import com.github.tomakehurst.wiremock.extension.Parameters;
 import com.github.tomakehurst.wiremock.extension.ResponseDefinitionTransformer;
+import com.github.tomakehurst.wiremock.extension.responsetemplating.helpers.HandlebarsCurrentDateHelper;
 import com.github.tomakehurst.wiremock.extension.responsetemplating.helpers.WireMockHelpers;
 import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.HttpHeaders;
@@ -36,64 +40,41 @@ import com.google.common.base.Function;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-
-import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
-import static com.github.tomakehurst.wiremock.common.Exceptions.throwUnchecked;
-import static com.google.common.base.MoreObjects.firstNonNull;
+import com.mitchellbosecke.pebble.PebbleEngine;
+import com.mitchellbosecke.pebble.PebbleEngine.Builder;
+import com.mitchellbosecke.pebble.extension.Extension;
+import com.mitchellbosecke.pebble.loader.StringLoader;
+import com.mitchellbosecke.pebble.template.PebbleTemplate;
 
 public class ResponseTemplateTransformer extends ResponseDefinitionTransformer {
 
     public static final String NAME = "response-template";
-
     private final boolean global;
 
-    private final Handlebars handlebars;
+    private final PebbleEngine pebbleEngine;
 
     public ResponseTemplateTransformer(boolean global) {
-        this(global, Collections.<String, Helper>emptyMap());
+        this(global, Collections.<Extension>emptyList());
     }
 
-    public ResponseTemplateTransformer(boolean global, String helperName, Helper helper) {
-        this(global, ImmutableMap.of(helperName, helper));
+    public ResponseTemplateTransformer(boolean global, String helperName, Extension helper) {
+        this(global, Collections.<Extension>emptyList());
     }
 
-    public ResponseTemplateTransformer(boolean global, Map<String, Helper> helpers) {
-        this(global, new Handlebars(), helpers);
-    }
-
-    public ResponseTemplateTransformer(boolean global, Handlebars handlebars, Map<String, Helper> helpers) {
+    public ResponseTemplateTransformer(boolean global, List<Extension> extensions) {
         this.global = global;
-        this.handlebars = handlebars;
-
-        for (StringHelpers helper: StringHelpers.values()) {
-            if (!helper.name().equals("now")) {
-                this.handlebars.registerHelper(helper.name(), helper);
-            }
-        }
-
-        for (NumberHelper helper: NumberHelper.values()) {
-            this.handlebars.registerHelper(helper.name(), helper);
+        Builder builder = new PebbleEngine.Builder();
+        for (Extension ext : extensions) {
+            builder.extension(ext);
         }
         
-        for (ConditionalHelpers helper: ConditionalHelpers.values()) {
-        	this.handlebars.registerHelper(helper.name(), helper);
-        }
-
-        this.handlebars.registerHelper(AssignHelper.NAME, new AssignHelper());
-
-        //Add all available wiremock helpers
-        for(WireMockHelpers helper: WireMockHelpers.values()){
-            this.handlebars.registerHelper(helper.name(), helper);
-        }
-
-        for (Map.Entry<String, Helper> entry: helpers.entrySet()) {
-            this.handlebars.registerHelper(entry.getKey(), entry.getValue());
-        }
+       //Add all available wiremock helpers
+       builder.extension(new WireMockHelpers());
+        
+        builder.loader( new StringLoader());
+        pebbleEngine = builder.build();
     }
+
 
     @Override
     public boolean applyGlobally() {
@@ -108,18 +89,17 @@ public class ResponseTemplateTransformer extends ResponseDefinitionTransformer {
     @Override
     public ResponseDefinition transform(Request request, ResponseDefinition responseDefinition, FileSource files, Parameters parameters) {
         ResponseDefinitionBuilder newResponseDefBuilder = ResponseDefinitionBuilder.like(responseDefinition);
-        final ImmutableMap<String, Object> model = ImmutableMap.<String, Object>builder()
-                .put("parameters", firstNonNull(parameters, Collections.<String, Object>emptyMap()))
+        final ImmutableMap<String, Object> model = ImmutableMap.<String, Object>builder().put("parameters", firstNonNull(parameters, Collections.<String, Object>emptyMap()))
                 .put("request", RequestTemplateModel.from(request)).build();
 
         if (responseDefinition.specifiesTextBodyContent()) {
-            Template bodyTemplate = uncheckedCompileTemplate(responseDefinition.getBody());
+            PebbleTemplate bodyTemplate = uncheckedCompileTemplate(responseDefinition.getBody());
             applyTemplatedResponseBody(newResponseDefBuilder, model, bodyTemplate);
         } else if (responseDefinition.specifiesBodyFile()) {
-            Template filePathTemplate = uncheckedCompileTemplate(responseDefinition.getBodyFileName());
+            PebbleTemplate filePathTemplate = uncheckedCompileTemplate(responseDefinition.getBodyFileName());
             String compiledFilePath = uncheckedApplyTemplate(filePathTemplate, model);
             TextFile file = files.getTextFileNamed(compiledFilePath);
-            Template bodyTemplate = uncheckedCompileTemplate(file.readContentsAsString());
+            PebbleTemplate bodyTemplate = uncheckedCompileTemplate(file.readContentsAsString());
             applyTemplatedResponseBody(newResponseDefBuilder, model, bodyTemplate);
         }
 
@@ -130,7 +110,7 @@ public class ResponseTemplateTransformer extends ResponseDefinitionTransformer {
                     List<String> newValues = Lists.transform(input.values(), new Function<String, String>() {
                         @Override
                         public String apply(String input) {
-                            Template template = uncheckedCompileTemplate(input);
+                            PebbleTemplate template = uncheckedCompileTemplate(input);
                             return uncheckedApplyTemplate(template, model);
                         }
                     });
@@ -142,7 +122,7 @@ public class ResponseTemplateTransformer extends ResponseDefinitionTransformer {
         }
 
         if (responseDefinition.getProxyBaseUrl() != null) {
-            Template proxyBaseUrlTemplate = uncheckedCompileTemplate(responseDefinition.getProxyBaseUrl());
+            PebbleTemplate proxyBaseUrlTemplate = uncheckedCompileTemplate(responseDefinition.getProxyBaseUrl());
             String newProxyBaseUrl = uncheckedApplyTemplate(proxyBaseUrlTemplate, model);
             newResponseDefBuilder.proxiedFrom(newProxyBaseUrl);
         }
@@ -150,24 +130,27 @@ public class ResponseTemplateTransformer extends ResponseDefinitionTransformer {
         return newResponseDefBuilder.build();
     }
 
-    private void applyTemplatedResponseBody(ResponseDefinitionBuilder newResponseDefBuilder, ImmutableMap<String, Object> model, Template bodyTemplate) {
+    private void applyTemplatedResponseBody(ResponseDefinitionBuilder newResponseDefBuilder, ImmutableMap<String, Object> model, PebbleTemplate bodyTemplate) {
         String newBody = uncheckedApplyTemplate(bodyTemplate, model);
         newResponseDefBuilder.withBody(newBody);
     }
 
-    private String uncheckedApplyTemplate(Template template, Object context) {
+    private String uncheckedApplyTemplate(PebbleTemplate template, Map<String, Object> context) {
         try {
-            return template.apply(context);
+            Writer writer = new StringWriter();
+            template.evaluate(writer, context);
+            return writer.toString();
         } catch (IOException e) {
             return throwUnchecked(e, String.class);
         }
     }
 
-    private Template uncheckedCompileTemplate(String content) {
+    private PebbleTemplate uncheckedCompileTemplate(String content) {
         try {
-            return handlebars.compileInline(content);
-        } catch (IOException e) {
-            return throwUnchecked(e, Template.class);
+            return pebbleEngine.getTemplate(content);
+        } catch (Exception e) {
+            return throwUnchecked(e, PebbleTemplate.class);
         }
     }
+
 }
